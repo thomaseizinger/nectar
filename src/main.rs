@@ -13,11 +13,15 @@
 #![allow(dead_code)] // To be removed further down the line
 #![forbid(unsafe_code)]
 
+mod bitcoin;
 mod bitcoin_wallet;
 mod bitcoind;
+mod dai;
 mod jsonrpc;
 mod ongoing_swaps;
 mod publish;
+mod swap;
+mod truncate_float;
 
 #[cfg(all(test, feature = "test-docker"))]
 pub mod test_harness;
