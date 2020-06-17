@@ -1,32 +1,19 @@
 use crate::publish::WorthIn;
-use num::{pow::Pow, BigUint, FromPrimitive};
-use std::ops::{Div, Mul};
+use num::{BigInt, BigRational, BigUint};
 
-pub const ATTOS_IN_DAI_EXP: u16 = 18;
-
-lazy_static::lazy_static! {
-    pub static ref DAI_DEC: BigUint =
-        BigUint::from(10u16).pow(ATTOS_IN_DAI_EXP);
-}
-
-// It means the mantissa can be up to 9 digits long
-const DAI_PRECISION_EXP: u16 = 9;
-
-lazy_static::lazy_static! {
-    pub static ref DAI_PRECISION: u32 =
-        10u32.pow(DAI_PRECISION_EXP as u32);
-}
+pub const ATTOS_IN_DAI: u64 = 1_000_000_000_000_000_000;
 
 #[derive(Clone, Ord, PartialOrd, PartialEq, Eq)]
 pub struct Amount(BigUint);
 
 impl Amount {
-    /// Rounds the value received to a 9 digits mantissa.
-    pub fn from_rounded_dai(dai: f64) -> Self {
-        let value = (dai * *DAI_PRECISION as f64).round();
-        let big_u_int = BigUint::from_f64(value).unwrap();
-
-        Amount(DAI_DEC.clone().mul(big_u_int).div(*DAI_PRECISION))
+    /// Note: the dai will be rounded to attodai.
+    pub fn from_rounded_dai(dai: BigRational) -> anyhow::Result<Self> {
+        let int = (dai * BigInt::from(ATTOS_IN_DAI)).round().to_integer();
+        match int.to_biguint() {
+            Some(uint) => Ok(Self(uint)),
+            None => Err(anyhow::anyhow!("dai is negative.")),
+        }
     }
 
     pub fn from_atto(atto: BigUint) -> Self {
@@ -51,10 +38,8 @@ impl std::fmt::Display for Amount {
 }
 
 impl WorthIn<crate::bitcoin::Amount> for Amount {
-    const MAX_PRECISION_EXP: u16 = 9;
-
-    fn worth_in(&self, _rhs: f64) -> anyhow::Result<crate::bitcoin::Amount> {
-        unimplemented!()
+    fn worth_in(&self, _rhs: BigRational) -> anyhow::Result<crate::bitcoin::Amount> {
+        todo!()
     }
 }
 
@@ -63,26 +48,5 @@ impl std::ops::Sub for Amount {
 
     fn sub(self, rhs: Self) -> Self::Output {
         Amount(self.0 - rhs.0)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn given_float_dai_amount_with_mantissa_of_length_nine_then_exact_value_is_stored() {
-        let some_dai = Amount::from_rounded_dai(1.555_555_555);
-        let same_amount = Amount::from_atto(BigUint::from(1_555_555_555_000_000_000u64));
-
-        assert_eq!(some_dai, same_amount);
-    }
-
-    #[test]
-    fn given_float_dai_amount_with_mantissa_of_length_ten_then_rounded_value_is_stored() {
-        let some_dai = Amount::from_rounded_dai(1.555_555_555_5);
-        let same_amount = Amount::from_atto(BigUint::from(1_555_555_556_000_000_000u64));
-
-        assert_eq!(some_dai, same_amount);
     }
 }

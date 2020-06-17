@@ -21,7 +21,6 @@ pub mod jsonrpc;
 pub mod ongoing_swaps;
 pub mod publish;
 pub mod swap;
-pub mod truncate_float;
 
 lazy_static::lazy_static! {
     pub static ref SECP: ::bitcoin::secp256k1::Secp256k1<::bitcoin::secp256k1::All> =

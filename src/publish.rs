@@ -1,5 +1,6 @@
 use crate::bitcoin;
 use crate::dai;
+use num::{BigRational, One, Signed, Zero};
 use std::cmp::min;
 
 pub trait BitcoinLockedFunds {
@@ -21,30 +22,30 @@ struct DaiBitcoinOrder {
 
 /// Allow to know the worth of self in a different asset using
 /// The given conversion rate.
-/// MAX_PRECISION_EXP is the maximum precision allowed (number of digits after
-/// the comma) for the rate passed in. This is to ensure that no precision is loss
-/// or truncation done when doing the conversion.
 pub trait WorthIn<Asset> {
-    const MAX_PRECISION_EXP: u16;
-
-    fn worth_in(&self, conversion_rate: f64) -> anyhow::Result<Asset>;
+    fn worth_in(&self, conversion_rate: BigRational) -> anyhow::Result<Asset>;
 }
 
 /// Contains a positive percentage value expressed in ratio: 1 is 100%
 /// To avoid human errors, the max value is 1.
-struct Spread(f64);
+struct Spread(BigRational);
 
 impl Spread {
-    pub fn new(spread: f64) -> Result<Spread, ()> {
-        if spread.is_sign_positive() && spread <= 1.0 {
+    pub fn new(spread: BigRational) -> Result<Spread, ()> {
+        if (spread.is_positive() || spread.is_zero()) && spread <= BigRational::one() {
             Ok(Spread(spread))
         } else {
             Err(())
         }
     }
 
-    pub fn apply(&self, base_rate: f64) -> f64 {
-        base_rate * (1.0 + self.0)
+    pub fn apply(self, base_rate: BigRational) -> BigRational {
+        base_rate * (self.0 + BigRational::one())
+    }
+
+    #[cfg(test)]
+    pub fn from_f64(spread: f64) -> Self {
+        Self::new(BigRational::from_float(spread).unwrap()).unwrap()
     }
 }
 
@@ -66,7 +67,7 @@ fn new_dai_bitcoin_order<W, B>(
     bitcoin_wallet: W,
     book: B,
     max_sell_amount: bitcoin::Amount,
-    mid_market_rate: f64,
+    mid_market_rate: BigRational,
     spread: Spread,
 ) -> DaiBitcoinOrder
 where
@@ -79,10 +80,6 @@ where
     ) - bitcoin_wallet.bitcoin_fees();
 
     let rate = spread.apply(mid_market_rate);
-    let rate = crate::truncate_float::truncate_using_string(
-        rate,
-        <bitcoin::Amount as WorthIn<dai::Amount>>::MAX_PRECISION_EXP,
-    );
 
     let buy_amount = sell_amount.worth_in(rate).unwrap();
 
@@ -95,6 +92,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num::FromPrimitive;
+    use num::Zero;
 
     #[derive(Copy, Clone)]
     struct Book {
@@ -147,7 +146,7 @@ mod tests {
     }
 
     fn dai(dai: f64) -> dai::Amount {
-        dai::Amount::from_rounded_dai(dai)
+        dai::Amount::from_rounded_dai(BigRational::from_f64(dai).unwrap()).unwrap()
     }
 
     #[test]
@@ -156,7 +155,11 @@ mod tests {
 
         let book = Book::new(btc(0.0));
 
-        let order = new_dai_bitcoin_order(wallet, book, btc(100.0), 1.0, Spread::new(0.0).unwrap());
+        let rate = BigRational::from_f64(1.0).unwrap();
+
+        let spread = Spread::new(BigRational::zero()).unwrap();
+
+        let order = new_dai_bitcoin_order(wallet, book, btc(100.0), rate, spread);
 
         assert_eq!(order.sell_amount, btc(10.0));
     }
@@ -167,7 +170,11 @@ mod tests {
 
         let book = Book::new(btc(2.0));
 
-        let order = new_dai_bitcoin_order(wallet, book, btc(100.0), 1.0, Spread::new(0.0).unwrap());
+        let rate = BigRational::from_f64(1.0).unwrap();
+
+        let spread = Spread::new(BigRational::zero()).unwrap();
+
+        let order = new_dai_bitcoin_order(wallet, book, btc(100.0), rate, spread);
 
         assert_eq!(order.sell_amount, btc(8.0));
     }
@@ -178,7 +185,11 @@ mod tests {
 
         let book = Book::new(btc(2.0));
 
-        let order = new_dai_bitcoin_order(wallet, book, btc(2.0), 1.0, Spread::new(0.0).unwrap());
+        let rate = BigRational::from_f64(1.0).unwrap();
+
+        let spread = Spread::from_f64(0.0);
+
+        let order = new_dai_bitcoin_order(wallet, book, btc(2.0), rate, spread);
 
         assert_eq!(order.sell_amount, btc(2.0));
     }
@@ -189,7 +200,11 @@ mod tests {
 
         let book = Book::new(btc(2.0));
 
-        let order = new_dai_bitcoin_order(wallet, book, btc(2.0), 1.0, Spread::new(0.0).unwrap());
+        let rate = BigRational::from_f64(1.0).unwrap();
+
+        let spread = Spread::from_f64(0.0);
+
+        let order = new_dai_bitcoin_order(wallet, book, btc(2.0), rate, spread);
 
         assert_eq!(order.sell_amount, btc(1.0));
     }
@@ -200,16 +215,22 @@ mod tests {
 
         let book = Book::new(btc(50.0));
 
-        let order =
-            new_dai_bitcoin_order(wallet, book, btc(9999.0), 0.1, Spread::new(0.0).unwrap());
+        let rate = BigRational::from_f64(0.1).unwrap();
+
+        let spread = Spread::from_f64(0.0);
+
+        let order = new_dai_bitcoin_order(wallet, book, btc(9999.0), rate, spread);
 
         // 1 Sell => 0.1 Buy
         // 1000 Sell => 100 Buy
         assert_eq!(order.sell_amount, btc(1000.0));
         assert_eq!(order.buy_amount, dai(100.0));
 
-        let order =
-            new_dai_bitcoin_order(wallet, book, btc(9999.0), 10.0, Spread::new(0.0).unwrap());
+        let rate = BigRational::from_f64(10.0).unwrap();
+
+        let spread = Spread::from_f64(0.0);
+
+        let order = new_dai_bitcoin_order(wallet, book, btc(9999.0), rate, spread);
 
         assert_eq!(order.sell_amount, btc(1000.0));
         assert_eq!(order.buy_amount, dai(10_000.0));
@@ -221,8 +242,11 @@ mod tests {
 
         let book = Book::new(btc(50.0));
 
-        let order =
-            new_dai_bitcoin_order(wallet, book, btc(9999.0), 0.1, Spread::new(0.03).unwrap());
+        let rate = BigRational::from_f64(0.1).unwrap();
+
+        let spread = Spread::from_f64(0.03);
+
+        let order = new_dai_bitcoin_order(wallet, book, btc(9999.0), rate, spread);
 
         assert_eq!(order.sell_amount, btc(1000.0));
         assert_eq!(order.buy_amount, dai(103.0));
