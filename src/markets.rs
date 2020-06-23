@@ -6,11 +6,12 @@ pub enum TradingPair {
     BtcDai,
 }
 
+//sat:millicent
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Rate {
     trading_pair: TradingPair,
     position: Position,
-    rate: f64,
+    pub rate: f64,
     timestamp: DateTime<Utc>,
 }
 
