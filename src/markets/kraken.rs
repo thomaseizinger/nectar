@@ -5,101 +5,62 @@ use serde::de::Error;
 use serde::Deserialize;
 use std::convert::TryFrom;
 
-/// Fetch OHLC (open-high-low-close) data
+/// Fetch Ticker data
 /// More info here: https://www.kraken.com/features/api
-pub async fn get_ohlc(trading_pair: TradingPair) -> anyhow::Result<markets::Ohlc> {
+pub async fn get_ask_bid(trading_pair: TradingPair) -> anyhow::Result<XbtDaiAskBid> {
     let trading_pair_code = get_trading_pair_code(trading_pair);
 
-    // Interval used when fetching the ohlc data from Kraken.
-    // The data returned will contain segments according to the interval.
-    // The highest frequency time interval for OHLC data is 1 minute, possible values:
-    // 1 (default), 5, 15, 30, 60, 240, 1440, 10080, 21600
-    let time_interval = 30;
-    // By passing in a timestamp far in the futrue we reduce the API to return only the last OHLC value
-    let since = 2_147_483_647;
 
-    let request_url = format!("https://api.kraken.com/0/public/OHLC?pair={trading_pair}&interval={time_interval}&since={since}",
+    let request_url = format!("https://api.kraken.com/0/public/Ticker?pair={trading_pair}",
                               trading_pair = trading_pair_code,
-                              time_interval = time_interval,
-                              since = since,
     );
 
     let response = reqwest::get(&request_url)
         .await?
-        .json::<OhlcResponse>()
+        .json::<TickerResponse>()
         .await?;
 
-    let ohlc = response.result.xbtdai;
-    let ohlc = ohlc
-        .last()
-        .ok_or_else(|| anyhow::Error::msg("No data returned from Kraken OHLC API"))?;
+    let ticker_data = response.result.xbtdai;
 
-    Ok(markets::Ohlc {
-        high: ohlc.high,
-        low: ohlc.low,
-        vwap: ohlc.vwap,
-        timestamp: ohlc.timestamp,
-        trading_pair,
-    })
+    Ok(XbtDaiAskBid::try_from(ticker_data)?)
 }
 
 #[derive(Deserialize)]
-struct OhlcResponse {
-    result: XbtDaiRates,
+struct TickerResponse {
+    result: XbtDaiTicker,
 }
 
 #[derive(Deserialize)]
-struct XbtDaiRates {
+struct XbtDaiTicker {
     #[serde(rename = "XBTDAI")]
-    xbtdai: Vec<Ohlc>,
+    xbtdai: XbtDaiTickerData,
 }
 
 #[derive(Deserialize)]
-struct RateItems(Vec<RateItem>);
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum RateItem {
-    String(String),
-    Number(u32),
+struct XbtDaiTickerData {
+    #[serde(rename = "a")]
+    ask: Vec<String>,
+    #[serde(rename = "b")]
+    bid: Vec<String>
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(try_from = "RateItems")]
-struct Ohlc {
-    timestamp: DateTime<Utc>,
-    open: f64,
-    high: f64,
-    low: f64,
-    close: f64,
-    vwap: f64, // volume weighted average price
-    volume: f64,
-    count: u32,
+#[serde(try_from = "XbtDaiTickerData")]
+pub struct XbtDaiAskBid {
+    pub ask: f64,
+    pub bid: f64,
 }
 
-impl TryFrom<RateItems> for Ohlc {
+impl TryFrom<XbtDaiTickerData> for XbtDaiAskBid {
     type Error = serde_json::Error;
 
-    fn try_from(value: RateItems) -> Result<Self, Self::Error> {
-        let (timestamp, open, high, low, close, vwap, volume, count) = match value.0.as_slice() {
-            [RateItem::Number(timestamp), RateItem::String(open), RateItem::String(high), RateItem::String(low), RateItem::String(close), RateItem::String(vwap), RateItem::String(volume), RateItem::Number(count)] => {
-                (timestamp, open, high, low, close, vwap, volume, count)
-            }
-            _ => return Err(serde_json::Error::custom("OHLC array malformed")),
-        };
+    fn try_from(value: XbtDaiTickerData) -> Result<Self, Self::Error> {
+        let ask_price = value.ask.first().ok_or(serde_json::Error::custom("no ask price"))?;
+        let bid_price = value.bid.first().ok_or(serde_json::Error::custom("no ask price"))?;
 
-        Ok(Ohlc {
-            timestamp: DateTime::<Utc>::from_utc(
-                NaiveDateTime::from_timestamp(*timestamp as i64, 0),
-                Utc,
-            ),
-            open: open.parse::<f64>().map_err(serde_json::Error::custom)?,
-            high: high.parse::<f64>().map_err(serde_json::Error::custom)?,
-            low: low.parse::<f64>().map_err(serde_json::Error::custom)?,
-            close: close.parse::<f64>().map_err(serde_json::Error::custom)?,
-            vwap: vwap.parse::<f64>().map_err(serde_json::Error::custom)?,
-            volume: volume.parse::<f64>().map_err(serde_json::Error::custom)?,
-            count: *count,
+        Ok(XbtDaiAskBid {
+            ask: ask_price.parse::<f64>().map_err(serde_json::Error::custom)?,
+            bid: bid_price.parse::<f64>().map_err(serde_json::Error::custom)?
         })
     }
 }
@@ -114,37 +75,54 @@ fn get_trading_pair_code(trading_pair: TradingPair) -> String {
 mod tests {
     use super::*;
 
-    const OHLC_EXAMPLE_DATA: &str = r#"{
-  "error": [],
-  "result": {
-    "XBTDAI": [
-      [
-        1581508800,
-        "10354.3",
-        "10412.1",
-        "10317.1",
-        "10317.1",
-        "10367.3",
-        "0.25537510",
-        6
-      ],
-      [
-        1581523200,
-        "10317.1",
-        "10371.6",
-        "10317.1",
-        "10320.8",
-        "10363.0",
-        "0.32213808",
-        24
-      ]
-    ],
-    "last": 1591848000
-  }
+    const TICKER_EXAMPLE: &str = r#"{
+    "error": [],
+    "result": {
+        "XBTDAI": {
+            "a": [
+                "9489.50000",
+                "1",
+                "1.000"
+            ],
+            "b": [
+                "9462.70000",
+                "1",
+                "1.000"
+            ],
+            "c": [
+                "9496.50000",
+                "0.00220253"
+            ],
+            "v": [
+                "0.19793959",
+                "0.55769847"
+            ],
+            "p": [
+                "9583.44469",
+                "9593.15707"
+            ],
+            "t": [
+                12,
+                22
+            ],
+            "l": [
+                "9496.50000",
+                "9496.50000"
+            ],
+            "h": [
+                "9594.90000",
+                "9616.10000"
+            ],
+            "o": "9562.30000"
+        }
+    }
 }"#;
 
     #[test]
-    fn given_ohlc_example_data_deserializes_correctly() {
-        serde_json::from_str::<OhlcResponse>(OHLC_EXAMPLE_DATA).unwrap();
+    fn given_ticker_example_data_deserializes_correctly() {
+        let xbt_dai= serde_json::from_str::<TickerResponse>(TICKER_EXAMPLE).unwrap().result.xbtdai;
+        assert!(XbtDaiAskBid::try_from(xbt_dai).is_ok());
     }
+
+
 }
