@@ -1,5 +1,5 @@
-use crate::markets;
-use crate::markets::TradingPair;
+use crate::market;
+use crate::market::TradingPair;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::de::Error;
 use serde::Deserialize;
@@ -7,7 +7,7 @@ use std::convert::TryFrom;
 
 /// Fetch OHLC (open-high-low-close) data
 /// More info here: https://www.kraken.com/features/api
-pub async fn get_ohlc(trading_pair: TradingPair) -> anyhow::Result<markets::Ohlc> {
+pub async fn get_ohlc(trading_pair: TradingPair) -> anyhow::Result<market::Ohlc> {
     let trading_pair_code = get_trading_pair_code(trading_pair);
 
     // Interval used when fetching the ohlc data from Kraken.
@@ -34,7 +34,7 @@ pub async fn get_ohlc(trading_pair: TradingPair) -> anyhow::Result<markets::Ohlc
         .last()
         .ok_or_else(|| anyhow::Error::msg("No data returned from Kraken OHLC API"))?;
 
-    Ok(markets::Ohlc {
+    Ok(market::Ohlc {
         high: ohlc.high,
         low: ohlc.low,
         vwap: ohlc.vwap,
