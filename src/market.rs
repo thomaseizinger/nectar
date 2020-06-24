@@ -1,5 +1,6 @@
 mod kraken;
 use chrono::{DateTime, Utc};
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, strum_macros::Display)]
 pub enum TradingPair {
@@ -14,12 +15,21 @@ pub struct Rate {
     timestamp: DateTime<Utc>,
 }
 
+impl TryInto<crate::rate::Rate> for Rate {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<crate::rate::Rate, Self::Error> {
+        crate::rate::Rate::try_from(self.rate)
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, strum_macros::Display)]
 pub enum Position {
     Buy,
     Sell,
 }
 
+#[derive(Debug, Copy, Clone)]
 pub struct Ohlc {
     high: f64,
     low: f64,

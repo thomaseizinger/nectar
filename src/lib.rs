@@ -21,6 +21,7 @@ pub mod bitcoind;
 pub mod dai;
 pub mod float_maths;
 pub mod jsonrpc;
+pub mod market;
 pub mod ongoing_swaps;
 pub mod publish;
 pub mod rate;
@@ -31,3 +32,29 @@ pub static SECP: Lazy<::bitcoin::secp256k1::Secp256k1<::bitcoin::secp256k1::All>
 
 #[cfg(all(test, feature = "test-docker"))]
 pub mod test_harness;
+
+#[cfg(test)]
+mod tests {
+    use crate::market::{get_rate, Position, TradingPair};
+    use crate::rate::{Rate, Spread};
+    use anyhow::Context;
+    use std::convert::TryInto;
+
+    #[tokio::test]
+    #[ignore] // Ignoring because no need to spam Kraken
+    async fn publish_btc_dai_sell_order() {
+        let spread = Spread::new(500).unwrap(); // TODO: load from config
+        println!("{:?}", &spread);
+        let rate = get_rate(TradingPair::BtcDai, Position::Sell)
+            .await
+            .and_then(|rate| {
+                println!("{:?}", &rate);
+                let rate: anyhow::Result<Rate> = rate.try_into();
+                rate
+            })
+            .and_then(|rate| spread.apply(rate))
+            .context("Could not publish rate")
+            .unwrap();
+        println!("{:?}", &rate);
+    }
+}
