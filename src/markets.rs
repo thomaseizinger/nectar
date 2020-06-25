@@ -57,6 +57,7 @@ pub struct NoRateFound {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -64,23 +65,23 @@ mod tests {
     fn given_kraken_ask_bid_and_position_sell_returns_sell_rate() {
         let ask_bid = AskBidRate {
             trading_pair: TradingPair::BtcDai,
-            ask: 9.000,
-            bid: 8.000,
+            ask: 9000.0,
+            bid: 8000.0,
         };
 
         let rate = Rate::from_kraken(ask_bid, Position::Sell);
-        assert_eq!(rate.rate, 9.000)
+        assert_eq!(rate.rate, 9000f64)
     }
 
     #[test]
     fn given_kraken_ask_bid_and_position_buy_returns_buy_rate() {
         let ask_bid = AskBidRate {
             trading_pair: TradingPair::BtcDai,
-            ask: 9.000,
-            bid: 8.000,
+            ask: 9000.0,
+            bid: 8000.0,
         };
 
         let rate = Rate::from_kraken(ask_bid, Position::Buy);
-        assert_eq!(rate.rate, 0.125)
+        assert_eq!(rate.rate, 0.000_125)
     }
 }

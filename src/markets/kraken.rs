@@ -1,4 +1,3 @@
-use crate::markets;
 use crate::markets::TradingPair;
 use serde::de::Error;
 use serde::Deserialize;
@@ -68,11 +67,11 @@ impl TryFrom<TickerData> for AskBid {
         let ask_price = value
             .ask
             .first()
-            .ok_or(serde_json::Error::custom("no ask price"))?;
+            .ok_or_else(|| serde_json::Error::custom("no ask price"))?;
         let bid_price = value
             .bid
             .first()
-            .ok_or(serde_json::Error::custom("no ask price"))?;
+            .ok_or_else(|| serde_json::Error::custom("no bid price"))?;
 
         Ok(AskBid {
             ask: ask_price
